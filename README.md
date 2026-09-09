@@ -65,7 +65,7 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 | 1080p window, 720p internal render, addon | 51.5 |
 | 1440p window, FSR Performance (720p internal, upscaled), addon | same as 720p internal |
 
-RT cost scales with the internal render resolution, not the window size. At high window resolutions enable FSR upscaling with `rt_fsr` in `~/.prboom-plus/prboom-plus.cfg`: 4 = Performance (720p internal, fastest), 3 = Balanced, 2 = Quality, 1 = Ultra Quality; with FSR active `rt_renderscale` is ignored. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+RT cost scales with the internal render resolution, not the window size. With `rt_fsr > 0` (FSR upscaling) the internal render size is fixed by `rt_renderscale` scaled by a quality factor — `rt_fsr 1` = 0.77, `2` = 0.67, `3` = 0.59, `4` = 0.5 — and stretched to whatever the window is, so windowed and fullscreen cost exactly the same. Current config: `rt_renderscale 9` (1440) + `rt_fsr 4` = 720p internal stretched to the 1440p window. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
 
 Shader experiments (stochastic light-type selection) showed no improvement and were reverted; the runtime loads precompiled shaders from `ovrd/shaders/`, so shader changes there require recompiling with `Source/Shaders/GenerateShaders.py` (needs the getTexture macro fix on the RTGL1 fork to build with modern glslc). Benchmarks on this machine are unreliable when background tasks are running.
 
