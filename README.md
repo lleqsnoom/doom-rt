@@ -63,8 +63,12 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 | Same, with the Doom 2 lighting addon | 51.8 |
 | 1080p window, 1080p internal render, addon | 23.6 |
 | 1080p window, 720p internal render, addon | 51.5 |
+| 1440p window, 1440p internal render, addon | 13.2 |
+| 1440p window, FSR Quality (~1717x965 internal), old build | 15.4 |
+| Same, with stochastic light selection | 32.8 |
+| 1440p window, FSR Ultra Quality (~1973x1109 internal), stochastic lights | 18.7 |
 
-RT cost scales with the internal render resolution (`rt_renderscale` in `~/.prboom-plus/prboom-plus.cfg`), not the window size. For full HD, keep `rt_renderscale 5` (720p internal, NEAREST-upscaled). The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+RT cost scales with the internal render resolution, not the window size. At high window resolutions enable FSR upscaling: `rt_fsr 1` (Ultra Quality) to `rt_fsr 4` (720p internal) in `~/.prboom-plus/prboom-plus.cfg`; with FSR active `rt_renderscale` is ignored. The fork's stochastic light selection (`perf-stochastic-lights`, merged as lleqsnoom/RayTracedGL1#2) picks one light type per pixel instead of casting up to 4 shadow rays per pixel — measured 2.1x on an A770, at the cost of slightly noisier direct lighting hidden by temporal accumulation. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
 
 # Restore the tagged working state
 
