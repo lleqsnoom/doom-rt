@@ -57,23 +57,25 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 
 # Performance notes (Intel Arc A770, timedemo demo1)
 
-Measured on a clean machine with single-bounce GI (`rt_bounce_quality 1`) and nearest-neighbor stretch (`rt_fsr 4`):
+Measured on a clean machine with single-bounce GI (`rt_bounce_quality 1`) and nearest-neighbor stretch (`rt_fsr 4`), at a 1080p window:
 
 | Internal render (`rt_renderscale` × `rt_fsr`) | FPS |
 |---|---|
-| 720p (renderscale 9 × fsr 4), two-bounce GI (bounce 2) | 37.0 |
-| 720p (renderscale 9 × fsr 4), single-bounce GI (bounce 1) | 52.2 |
-| 540p (renderscale 7 × fsr 4), single-bounce GI | 62.8 |
-| 300p (renderscale 6 × fsr 4), single-bounce GI | 85.7 |
+| 600p (renderscale 8 × fsr 4), two-bounce GI (bounce 2) | 37.0 |
+| 600p (renderscale 8 × fsr 4), single-bounce GI (bounce 1) | 53.2 |
+| 540p (renderscale 7 × fsr 4), single-bounce GI | 60.0 |
+| 450p (renderscale 6 × fsr 4), single-bounce GI | 85.7 |
+
+Note: `rt_renderscale` is clamped to the largest value ≤ the window height, so at a 1080p window renderscale 9 (1440) silently becomes 8 (1200). Internal height = renderscale height × `rt_fsr` factor.
 
 RT cost scales with the internal render resolution, not the window size. With `rt_fsr > 0` (stretch mode) the internal render size is fixed by `rt_renderscale` scaled by a quality factor — `rt_fsr 1` = 0.77, `2` = 0.67, `3` = 0.59, `4` = 0.5 — and upscaled with nearest-neighbor filtering to whatever the window is, so windowed and fullscreen cost exactly the same and pixels stay sharp.
 
 **Single-bounce GI** (`rt_bounce_quality 1`, the default now): the indirect pass skips the second diffuse bounce, halving indirect ray cost (+29% vs the two-bounce path). Set `rt_bounce_quality 2` for fuller bounced light at the cost of FPS. `rt_refl_refr_max_depth 1` is also set. The fallback-lighting path (no Doom 2 metainfo) is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
 
-**90 FPS recipe:** `rt_renderscale 6` + `rt_fsr 4` (300p internal). Sharper trade-offs: 540p ≈ 63 FPS, 720p ≈ 52 FPS.
+**90 FPS recipe:** `rt_renderscale 6` + `rt_fsr 4` (450p internal). Sharper trade-offs: 540p ≈ 60 FPS, 600p ≈ 53 FPS.
 
 Shader changes require recompiling the affected `.spv` into `ovrd/shaders/` (the runtime loads precompiled shaders from there). The single-bounce change only recompiled `RtRaygenIndirect.rgen`:
-`cd RTGL1-rt/Source/Shaders && glslc --target-env=vulkan1.2 -I . -I ../Generated RtRaygenIndirect.rgen -o ../../Build/RtRaygenIndirect.rgen.spv`, then copy it over `ovrd/shaders/RtRaygenIndirect.rgen.spv`. The stochastic-light experiment showed no gain and was reverted.
+`cd RTGL1-rt/Source/Shaders && glslc --target-env=vulkan1.2 -I . -I ../Generated RtRaygenIndirect.rgen -o ../../Build/RtRaygenIndirect.rgen.spv`, then copy it over `ovrd/shaders/RtRaygenIndirect.rgen.spv`. The stochastic-light experiment showed no gain and was reverted. The dynamic-BLAS refit (full rebuild → refit when topology is stable) gave a small +1.5%.
 
 # Restore the tagged working state
 
