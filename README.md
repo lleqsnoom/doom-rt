@@ -37,21 +37,21 @@ Renderer (RayTracedGL1):
 
 Renderer first:
 
-    cd ~/RTGL1-rt
+    cd ~/Documents/GitHub/lleqsnoom/RTGL1-rt
     cmake -B Build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DRG_WITH_SURFACE_XLIB=ON \
       -DVulkan_INCLUDE_DIR=$HOME/Vulkan-Headers/include
     cmake --build Build
 
-Game (expects the renderer tree at `~/RTGL1-rt`):
+Game (expects the renderer tree at `~/Documents/GitHub/lleqsnoom/RTGL1-rt`):
 
-    cd ~/prboom-plus-rt/prboom2
-    RTGL1_SDK_PATH=~/RTGL1-rt cmake -B build -G Ninja \
+    cd ~/Documents/GitHub/lleqsnoom/prboom-plus-rt/prboom2
+    RTGL1_SDK_PATH=~/Documents/GitHub/lleqsnoom/RTGL1-rt cmake -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DCMAKE_C_STANDARD=99 \
       -DWITH_FLUIDSYNTH=ON
-    RTGL1_SDK_PATH=~/RTGL1-rt cmake --build build
+    RTGL1_SDK_PATH=~/Documents/GitHub/lleqsnoom/RTGL1-rt cmake --build build
 
 Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/libRayTracedGL1.so` here. Vulkan headers newer than the system package are expected at `~/Vulkan-Headers` (pacman was unavailable on this machine).
 
@@ -68,7 +68,7 @@ RT cost scales with the internal render resolution (`rt_renderscale` in `~/.prbo
 
 # Restore the tagged working state
 
-    cd ~/prboom-plus-rt && git checkout working-20260908
-    cd ~/RTGL1-rt && git checkout working-20260908
+    cd ~/Documents/GitHub/lleqsnoom/prboom-plus-rt && git checkout working-20260908
+    cd ~/Documents/GitHub/lleqsnoom/RTGL1-rt && git checkout working-20260908
 
 then rebuild both. The `backup-working-20260908/` directory holds the matching prebuilt binaries and config without rebuilding.
