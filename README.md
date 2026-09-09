@@ -57,14 +57,15 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 
 # Performance notes (Intel Arc A770, timedemo demo1)
 
-Measured on a clean machine with single-bounce GI (`rt_bounce_quality 1`) and nearest-neighbor stretch (`rt_fsr 4`), at a 1080p window:
+Measured on a clean machine with single-bounce GI (`rt_bounce_quality 1`), nearest-neighbor stretch (`rt_fsr 4`), and **vsync off** (`render_vsync 0`):
 
 | Internal render (`rt_renderscale` × `rt_fsr`) | FPS |
 |---|---|
-| 600p (renderscale 8 × fsr 4), two-bounce GI (bounce 2) | 37.0 |
-| 600p (renderscale 8 × fsr 4), single-bounce GI (bounce 1) | 53.2 |
-| 540p (renderscale 7 × fsr 4), single-bounce GI | 60.0 |
-| 450p (renderscale 6 × fsr 4), single-bounce GI | 85.7 |
+| 600p (renderscale 8 × fsr 4) | 53.8 |
+| 450p (renderscale 6 × fsr 4) | 89.9 |
+| 360p (renderscale 5 × fsr 4) | 131.5 |
+
+**Vsync is the big one:** `render_vsync 1` capped the game to the 60 Hz display refresh, hiding the real GPU headroom (with vsync off, 160p internal runs at 638 FPS). Set `render_vsync 0` for uncapped framerates; on this 60 Hz non-VRR monitor that means tearing above 60 FPS.
 
 Note: `rt_renderscale` is clamped to the largest value ≤ the window height, so at a 1080p window renderscale 9 (1440) silently becomes 8 (1200). Internal height = renderscale height × `rt_fsr` factor.
 
@@ -72,10 +73,9 @@ RT cost scales with the internal render resolution, not the window size. With `r
 
 **Single-bounce GI** (`rt_bounce_quality 1`, the default now): the indirect pass skips the second diffuse bounce, halving indirect ray cost (+29% vs the two-bounce path). Set `rt_bounce_quality 2` for fuller bounced light at the cost of FPS. `rt_refl_refr_max_depth 1` is also set. The fallback-lighting path (no Doom 2 metainfo) is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
 
-**90 FPS recipe:** `rt_renderscale 6` + `rt_fsr 4` (450p internal). Sharper trade-offs: 540p ≈ 60 FPS, 600p ≈ 53 FPS.
+**90 FPS recipe:** `render_vsync 0`, `rt_renderscale 6` + `rt_fsr 4` (450p internal) = 90 FPS. Sharper trade-offs: 540p ≈ 65-70 FPS, 600p ≈ 54 FPS.
 
-Shader changes require recompiling the affected `.spv` into `ovrd/shaders/` (the runtime loads precompiled shaders from there). The single-bounce change only recompiled `RtRaygenIndirect.rgen`:
-`cd RTGL1-rt/Source/Shaders && glslc --target-env=vulkan1.2 -I . -I ../Generated RtRaygenIndirect.rgen -o ../../Build/RtRaygenIndirect.rgen.spv`, then copy it over `ovrd/shaders/RtRaygenIndirect.rgen.spv`. The stochastic-light experiment showed no gain and was reverted. The dynamic-BLAS refit (full rebuild → refit when topology is stable) gave a small +1.5%.
+**CPU is not the bottleneck:** at 160p internal the game runs 638 FPS, so the single-threaded game/upload loop can sustain well over 90 FPS — multithreading the CPU side would not help. GPU ray tracing is already maximally parallel (one ray per pixel); the remaining cost is inherent to the path tracer and only drops with resolution or the GI-bounce cuts above.
 
 # Restore the tagged working state
 
