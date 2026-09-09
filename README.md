@@ -63,12 +63,11 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 | Same, with the Doom 2 lighting addon | 51.8 |
 | 1080p window, 1080p internal render, addon | 23.6 |
 | 1080p window, 720p internal render, addon | 51.5 |
-| 1440p window, 1440p internal render, addon | 13.2 |
-| 1440p window, FSR Quality (~1717x965 internal), old build | 15.4 |
-| Same, with stochastic light selection | 32.8 |
-| 1440p window, FSR Ultra Quality (~1973x1109 internal), stochastic lights | 18.7 |
+| 1440p window, FSR Performance (720p internal, upscaled), addon | same as 720p internal |
 
-RT cost scales with the internal render resolution, not the window size. At high window resolutions enable FSR upscaling: `rt_fsr 1` (Ultra Quality) to `rt_fsr 4` (720p internal) in `~/.prboom-plus/prboom-plus.cfg`; with FSR active `rt_renderscale` is ignored. The fork's stochastic light selection (`perf-stochastic-lights`, merged as lleqsnoom/RayTracedGL1#2) picks one light type per pixel instead of casting up to 4 shadow rays per pixel — measured 2.1x on an A770, at the cost of slightly noisier direct lighting hidden by temporal accumulation. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+RT cost scales with the internal render resolution, not the window size. At high window resolutions enable FSR upscaling with `rt_fsr` in `~/.prboom-plus/prboom-plus.cfg`: 4 = Performance (720p internal, fastest), 3 = Balanced, 2 = Quality, 1 = Ultra Quality; with FSR active `rt_renderscale` is ignored. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+
+Shader experiments (stochastic light-type selection) showed no improvement and were reverted; the runtime loads precompiled shaders from `ovrd/shaders/`, so shader changes there require recompiling with `Source/Shaders/GenerateShaders.py` (needs the getTexture macro fix on the RTGL1 fork to build with modern glslc). Benchmarks on this machine are unreliable when background tasks are running.
 
 # Restore the tagged working state
 
