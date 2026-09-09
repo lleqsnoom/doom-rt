@@ -1,0 +1,5 @@
+*.wad
+prboom-plus
+libRayTracedGL1.so
+ovrd/
+backup-*/
