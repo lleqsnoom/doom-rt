@@ -57,17 +57,23 @@ Install: copy `prboom2/build/prboom-plus` and `RTGL1-rt/Build/RelWithDebInfo/lib
 
 # Performance notes (Intel Arc A770, timedemo demo1)
 
-| Setup | FPS |
+Measured on a clean machine with single-bounce GI (`rt_bounce_quality 1`) and nearest-neighbor stretch (`rt_fsr 4`):
+
+| Internal render (`rt_renderscale` × `rt_fsr`) | FPS |
 |---|---|
-| 720p window, 720p internal render, no Doom 2 metainfo (fallback lights) | 1–14, risk of GPU hang |
-| Same, with the Doom 2 lighting addon | 51.8 |
-| 1080p window, 1080p internal render, addon | 23.6 |
-| 1080p window, 720p internal render, addon | 51.5 |
-| 1440p window, FSR Performance (720p internal, upscaled), addon | same as 720p internal |
+| 720p (renderscale 9 × fsr 4), two-bounce GI (bounce 2) | 37.0 |
+| 720p (renderscale 9 × fsr 4), single-bounce GI (bounce 1) | 52.2 |
+| 540p (renderscale 7 × fsr 4), single-bounce GI | 62.8 |
+| 300p (renderscale 6 × fsr 4), single-bounce GI | 85.7 |
 
-RT cost scales with the internal render resolution, not the window size. With `rt_fsr > 0` (stretch mode) the internal render size is fixed by `rt_renderscale` scaled by a quality factor — `rt_fsr 1` = 0.77, `2` = 0.67, `3` = 0.59, `4` = 0.5 — and upscaled with nearest-neighbor filtering to whatever the window is, so windowed and fullscreen cost exactly the same and pixels stay sharp. Current config: `rt_renderscale 9` (1440) + `rt_fsr 4` = 720p internal stretched to the 1440p window. Other cheap levers: `rt_bounce_quality 1` and `rt_refl_refr_max_depth 1`. The fallback-lighting path above is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+RT cost scales with the internal render resolution, not the window size. With `rt_fsr > 0` (stretch mode) the internal render size is fixed by `rt_renderscale` scaled by a quality factor — `rt_fsr 1` = 0.77, `2` = 0.67, `3` = 0.59, `4` = 0.5 — and upscaled with nearest-neighbor filtering to whatever the window is, so windowed and fullscreen cost exactly the same and pixels stay sharp.
 
-Shader experiments (stochastic light-type selection) showed no improvement and were reverted; the runtime loads precompiled shaders from `ovrd/shaders/`, so shader changes there require recompiling with `Source/Shaders/GenerateShaders.py` (needs the getTexture macro fix on the RTGL1 fork to build with modern glslc). Benchmarks on this machine are unreliable when background tasks are running.
+**Single-bounce GI** (`rt_bounce_quality 1`, the default now): the indirect pass skips the second diffuse bounce, halving indirect ray cost (+29% vs the two-bounce path). Set `rt_bounce_quality 2` for fuller bounced light at the cost of FPS. `rt_refl_refr_max_depth 1` is also set. The fallback-lighting path (no Doom 2 metainfo) is intentionally slow; do not raise `rt_renderscale` or `uncapped_framerate` while it is active.
+
+**90 FPS recipe:** `rt_renderscale 6` + `rt_fsr 4` (300p internal). Sharper trade-offs: 540p ≈ 63 FPS, 720p ≈ 52 FPS.
+
+Shader changes require recompiling the affected `.spv` into `ovrd/shaders/` (the runtime loads precompiled shaders from there). The single-bounce change only recompiled `RtRaygenIndirect.rgen`:
+`cd RTGL1-rt/Source/Shaders && glslc --target-env=vulkan1.2 -I . -I ../Generated RtRaygenIndirect.rgen -o ../../Build/RtRaygenIndirect.rgen.spv`, then copy it over `ovrd/shaders/RtRaygenIndirect.rgen.spv`. The stochastic-light experiment showed no gain and was reverted.
 
 # Restore the tagged working state
 
