@@ -9,32 +9,19 @@
 # parameters (without it, every raygen/helper shader fails to compile to MSL).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
 MOLTENVK_REPO="${MOLTENVK_REPO:-https://github.com/dttdrv/MoltenVK.git}"
 MOLTENVK_BRANCH="${MOLTENVK_BRANCH:-macgaming/ray-query-pr}"
+MOLTENVK_REV="${MOLTENVK_REV:-d5e50321f97d0af198e163b610d7757beab53428}"
 SPIRV_CROSS_REPO="${SPIRV_CROSS_REPO:-https://github.com/dttdrv/SPIRV-Cross.git}"
 SPIRV_CROSS_REV="${SPIRV_CROSS_REV:-6c153db339ad0dfd57fe5808f8b29c98f013a2e5}"
-JOBS="${JOBS:-}"
 
 mkdir -p "$WORK"
 cd "$WORK"
 
-if [ ! -d MoltenVK/.git ]; then
-    echo ">> Cloning MoltenVK ($MOLTENVK_BRANCH)"
-    git clone --depth 1 -b "$MOLTENVK_BRANCH" "$MOLTENVK_REPO" MoltenVK
-fi
-
-if [ ! -d SPIRV-Cross/.git ]; then
-    echo ">> Fetching pinned SPIRV-Cross ($SPIRV_CROSS_REV)"
-    git init -q SPIRV-Cross
-    (
-        cd SPIRV-Cross
-        git remote add origin "$SPIRV_CROSS_REPO"
-        git fetch -q --depth 1 origin "$SPIRV_CROSS_REV"
-        git checkout -q FETCH_HEAD
-    )
-fi
+pin_repo MoltenVK "$MOLTENVK_REPO" "$MOLTENVK_REV" "$MOLTENVK_BRANCH"
+pin_repo SPIRV-Cross "$SPIRV_CROSS_REPO" "$SPIRV_CROSS_REV"
 
 echo ">> Patching SPIRV-Cross MSL ray-tracing builtin types"
 (
@@ -50,11 +37,7 @@ cmake -B build -G Ninja \
     -DCPM_SPIRV-Cross_SOURCE="$WORK/SPIRV-Cross"
 
 echo ">> Building MoltenVK"
-if [ -n "$JOBS" ]; then
-    cmake --build build --target MoltenVK -j "$JOBS"
-else
-    cmake --build build --target MoltenVK
-fi
+cmake_build build MoltenVK
 
 echo
 echo "MoltenVK built: $WORK/MoltenVK/build/MoltenVK/libMoltenVK.dylib"

@@ -3,7 +3,8 @@
 # MoltenVK with experimental Metal ray tracing enabled.
 set -euo pipefail
 
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
 MOLTENVK_DIR="${MOLTENVK_DIR:-$WORK/MoltenVK/build/MoltenVK}"
 EXAMPLE="${EXAMPLE:-$WORK/RTGL1/Build/RtglExample}"
 

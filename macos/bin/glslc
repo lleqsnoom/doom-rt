@@ -11,40 +11,55 @@ import subprocess
 import sys
 import tempfile
 
-args = sys.argv[1:]
-env = "vulkan1.2"
-out = None
-inp = None
-incs = []
-defs = []
+def fail(message):
+    sys.stderr.write("glslc shim: %s\n" % message)
+    sys.exit(2)
 
-i = 0
-while i < len(args):
-    a = args[i]
-    if a.startswith("--target-env="):
-        env = a.split("=", 1)[1]
-    elif a == "-o":
+
+def parse_args(args):
+    env = "vulkan1.2"
+    out = None
+    inp = None
+    incs = []
+    defs = []
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--target-env="):
+            env = a.split("=", 1)[1]
+        elif a == "-o":
+            i += 1
+            if i >= len(args):
+                fail("-o requires an argument")
+            out = args[i]
+        elif a == "-I":
+            i += 1
+            if i >= len(args):
+                fail("-I requires an argument")
+            incs.append("-I" + args[i])
+        elif a.startswith("-I"):
+            incs.append(a)
+        elif a.startswith("-D"):
+            defs.append(a)
+        elif a in ("-O", "-g", "-Wall"):
+            pass
+        elif a.startswith("-"):
+            fail("unsupported option: %s" % a)
+        else:
+            inp = a
         i += 1
-        out = args[i]
-    elif a == "-I":
-        i += 1
-        incs.append("-I" + args[i])
-    elif a.startswith("-I"):
-        incs.append(a)
-    elif a.startswith("-D"):
-        defs.append(a)
-    elif a in ("-O", "-g", "-Wall"):
-        pass
-    else:
-        inp = a
-    i += 1
 
-incs.insert(0, "-I" + os.path.dirname(os.path.abspath(inp)))
+    if out is None or inp is None:
+        fail("usage: glslc [--target-env=...] [-I<dir>] [-D<def>] <input> -o <output>")
 
-with open(inp, "r", errors="replace") as handle:
-    source = handle.read()
+    return env, inp, out, incs, defs
 
-if "GL_GOOGLE_include_directive" not in source:
+
+def ensure_include_extension(source):
+    if "GL_GOOGLE_include_directive" in source:
+        return source
+
     lines = source.splitlines(keepends=True)
     insert = 0
     for index, line in enumerate(lines):
@@ -52,23 +67,38 @@ if "GL_GOOGLE_include_directive" not in source:
             insert = index + 1
             break
     lines.insert(insert, "#extension GL_GOOGLE_include_directive : require\n")
-    source = "".join(lines)
+    return "".join(lines)
 
-suffix = os.path.splitext(inp)[1]
-fd, tmp = tempfile.mkstemp(suffix=suffix)
-with os.fdopen(fd, "w") as handle:
-    handle.write(source)
 
-try:
-    result = subprocess.run(
-        ["glslangValidator", "-V", "--target-env", env] + incs + defs + ["-o", out, tmp],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if result.returncode != 0:
-        sys.stdout.write(result.stdout or "")
-        sys.exit(result.returncode)
-    sys.exit(0)
-finally:
-    os.remove(tmp)
+def compile_to_spirv(env, inp, out, incs, defs, source):
+    suffix = os.path.splitext(inp)[1]
+    fd, tmp = tempfile.mkstemp(suffix=suffix)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(source)
+
+    try:
+        result = subprocess.run(
+            ["glslangValidator", "-V", "--target-env", env] + incs + defs + ["-o", out, tmp],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if result.returncode != 0:
+            sys.stdout.write(result.stdout or "")
+            sys.exit(result.returncode)
+    finally:
+        os.remove(tmp)
+
+
+def main():
+    env, inp, out, incs, defs = parse_args(sys.argv[1:])
+    incs.insert(0, "-I" + os.path.dirname(os.path.abspath(inp)))
+
+    with open(inp, "r", errors="replace") as handle:
+        source = handle.read()
+
+    compile_to_spirv(env, inp, out, incs, defs, ensure_include_extension(source))
+
+
+if __name__ == "__main__":
+    main()

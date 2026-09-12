@@ -5,8 +5,7 @@
 # is enabled, so MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1 is required.
 set -euo pipefail
 
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
-RUN_DIR="${RUN_DIR:-$WORK/doom-rt-run}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 if [ ! -x "$RUN_DIR/prboom-plus" ]; then
     echo "No prboom-plus in $RUN_DIR - run build-game.sh and fetch-assets.sh first." >&2
@@ -16,7 +15,6 @@ fi
 cd "$RUN_DIR"
 
 export MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1
-# Prefer the bundled RTGL1 library next to the binary.
 export DYLD_LIBRARY_PATH="$(pwd):${DYLD_LIBRARY_PATH:-}"
 
 # Disable sound if requested; SDL audio startup can hang on machines/sessions

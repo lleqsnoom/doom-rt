@@ -5,9 +5,8 @@
 # they match the renderer exactly.
 set -euo pipefail
 
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
-RUN_DIR="${RUN_DIR:-$WORK/doom-rt-run}"
-RTGL1_DIR="${RTGL1_DIR:-$WORK/RTGL1-rt}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
 RELEASE_URL="${RELEASE_URL:-https://github.com/sultim-t/prboom-plus-rt/releases/download/v2.6.1-rt1.0.7/prboom-rt-1.0.7.zip}"
 
 mkdir -p "$RUN_DIR"
@@ -19,9 +18,20 @@ curl -L --fail -o "$TMP/prboom-rt.zip" "$RELEASE_URL"
 
 echo ">> Extracting ovrd/ and prboom-plus.wad"
 unzip -q -o "$TMP/prboom-rt.zip" -d "$TMP/extract"
+
+# The Doom 2 lighting metainfo is a manual download; keep it across refreshes.
+if [ -f "$RUN_DIR/ovrd/map_metainfo_doom2.txt" ]; then
+    echo ">> Keeping existing map_metainfo_doom2.txt"
+    cp -f "$RUN_DIR/ovrd/map_metainfo_doom2.txt" "$TMP/map_metainfo_doom2.txt"
+fi
+
 rm -rf "$RUN_DIR/ovrd"
 cp -R "$TMP/extract/ovrd" "$RUN_DIR/ovrd"
 cp -f "$TMP/extract/prboom-plus.wad" "$RUN_DIR/prboom-plus.wad"
+
+if [ -f "$TMP/map_metainfo_doom2.txt" ]; then
+    cp -f "$TMP/map_metainfo_doom2.txt" "$RUN_DIR/ovrd/map_metainfo_doom2.txt"
+fi
 
 if [ -d "$RTGL1_DIR/Build" ]; then
     echo ">> Installing locally built shaders"

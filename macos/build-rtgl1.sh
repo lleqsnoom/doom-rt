@@ -6,14 +6,11 @@
 # local macOS portability patch, and compiles the ray-tracing shaders to SPIR-V.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
 RTGL1_REPO="${RTGL1_REPO:-https://github.com/lleqsnoom/RayTracedGL1.git}"
 RTGL1_BRANCH="${RTGL1_BRANCH:-arc-a770-fixes}"
-RTGL1_DIR="${RTGL1_DIR:-$WORK/RTGL1-rt}"
-VULKAN_HEADERS_DIR="${VULKAN_HEADERS_DIR:-$WORK/Vulkan-Headers}"
-MOLTENVK_LIB="${MOLTENVK_LIB:-$WORK/MoltenVK/build/MoltenVK/libMoltenVK.dylib}"
-JOBS="${JOBS:-}"
+RTGL1_REV="${RTGL1_REV:-6e8e75e8571221a789e75aa8eb7b7fdb111b2989}"
 
 if [ ! -f "$MOLTENVK_LIB" ]; then
     echo "MoltenVK not found at $MOLTENVK_LIB - run build-moltenvk.sh first." >&2
@@ -23,24 +20,17 @@ fi
 mkdir -p "$WORK"
 cd "$WORK"
 
-if [ ! -d "$VULKAN_HEADERS_DIR/.git" ]; then
-    echo ">> Cloning Vulkan-Headers"
-    git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_DIR"
-fi
-
-if [ ! -d "$RTGL1_DIR/.git" ]; then
-    echo ">> Cloning RTGL1 ($RTGL1_BRANCH)"
-    git clone --depth 1 -b "$RTGL1_BRANCH" "$RTGL1_REPO" "$RTGL1_DIR"
-fi
+pin_repo "$VULKAN_HEADERS_DIR" "$VULKAN_HEADERS_REPO" "$VULKAN_HEADERS_REV" "$VULKAN_HEADERS_BRANCH"
+pin_repo "$RTGL1_DIR" "$RTGL1_REPO" "$RTGL1_REV" "$RTGL1_BRANCH"
 
 cd "$RTGL1_DIR"
 echo ">> Applying macOS port patch"
 git checkout -q -- .
-git apply "$HERE/patches/rtgl1-rt-macos.patch"
+git apply "$SCRIPT_DIR/patches/rtgl1-rt-macos.patch"
 
 # RTGL1's shader build shells out to glslc (Vulkan SDK), which is usually absent
 # on a Mac with only Command Line Tools; bin/glslc is a glslangValidator shim.
-export PATH="$HERE/bin:$PATH"
+export PATH="$SCRIPT_DIR/bin:$PATH"
 
 echo ">> Configuring RTGL1"
 cmake -B Build -G Ninja \
@@ -53,11 +43,7 @@ cmake -B Build -G Ninja \
     -DVulkan_LIBRARY="$MOLTENVK_LIB"
 
 echo ">> Building RTGL1"
-if [ -n "$JOBS" ]; then
-    cmake --build Build -j "$JOBS"
-else
-    cmake --build Build
-fi
+cmake_build Build
 
 echo ">> Compiling shaders"
 (

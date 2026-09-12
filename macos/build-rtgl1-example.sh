@@ -6,13 +6,10 @@
 # This is NOT the renderer the game uses - see build-rtgl1.sh for that.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-WORK="${WORK:-$HOME/Documents/GitHub/lleqsnoom/macos-spike}"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
 RTGL1_REPO="${RTGL1_REPO:-https://github.com/sultim-t/RayTracedGL1.git}"
-RTGL1_REV="${RTGL1_REV:-2457acc}"
-VULKAN_HEADERS_DIR="${VULKAN_HEADERS_DIR:-$WORK/Vulkan-Headers}"
-MOLTENVK_LIB="${MOLTENVK_LIB:-$WORK/MoltenVK/build/MoltenVK/libMoltenVK.dylib}"
-JOBS="${JOBS:-}"
+RTGL1_REV="${RTGL1_REV:-2457acc25df5766e48289205471cc2a07499f7f6}"
 
 if [ ! -f "$MOLTENVK_LIB" ]; then
     echo "MoltenVK not found at $MOLTENVK_LIB - run build-moltenvk.sh first." >&2
@@ -22,9 +19,7 @@ fi
 mkdir -p "$WORK"
 cd "$WORK"
 
-if [ ! -d "$VULKAN_HEADERS_DIR/.git" ]; then
-    git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_DIR"
-fi
+pin_repo "$VULKAN_HEADERS_DIR" "$VULKAN_HEADERS_REPO" "$VULKAN_HEADERS_REV" "$VULKAN_HEADERS_BRANCH"
 
 if [ ! -d RTGL1/.git ]; then
     echo ">> Cloning RTGL1 ($RTGL1_REV)"
@@ -38,13 +33,10 @@ fi
 
 cd RTGL1
 echo ">> Applying macOS port patch"
-if git apply --check "$HERE/patches/rtgl1-example-macos.patch" 2>/dev/null; then
-    git apply "$HERE/patches/rtgl1-example-macos.patch"
-else
-    echo "   (patch already applied - continuing)"
-fi
+git checkout -q -- .
+git apply "$SCRIPT_DIR/patches/rtgl1-example-macos.patch"
 
-export PATH="$HERE/bin:$PATH"
+export PATH="$SCRIPT_DIR/bin:$PATH"
 
 echo ">> Configuring RTGL1 example"
 cmake -B Build -G Ninja \
@@ -58,11 +50,7 @@ cmake -B Build -G Ninja \
     -DVulkan_LIBRARY="$MOLTENVK_LIB"
 
 echo ">> Building RTGL1 example"
-if [ -n "$JOBS" ]; then
-    cmake --build Build --target RtglExample -j "$JOBS"
-else
-    cmake --build Build --target RtglExample
-fi
+cmake_build Build RtglExample
 
 cp -f Tools/BlueNoise_LDR_RGBA_128.ktx2 ./BlueNoise_LDR_RGBA_128.ktx2
 ln -sfn Build/shaders shaders

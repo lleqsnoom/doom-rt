@@ -6,12 +6,12 @@
 #   4. Stage the run directory and its resources
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-"$HERE/build-moltenvk.sh"
-"$HERE/build-rtgl1.sh"
-"$HERE/build-game.sh"
-"$HERE/fetch-assets.sh"
+"$SCRIPT_DIR/build-moltenvk.sh"
+"$SCRIPT_DIR/build-rtgl1.sh"
+"$SCRIPT_DIR/build-game.sh"
+"$SCRIPT_DIR/fetch-assets.sh"
 
 cat <<'EOF'
 
