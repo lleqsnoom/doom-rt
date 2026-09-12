@@ -1,0 +1,156 @@
+diff --git a/prboom2/src/CMakeLists.txt b/prboom2/src/CMakeLists.txt
+index 7797895..615cb98 100644
+--- a/prboom2/src/CMakeLists.txt
++++ b/prboom2/src/CMakeLists.txt
+@@ -438,7 +438,15 @@ function(AddGameExecutable TARGET SOURCES)
+         )
+         target_compile_definitions(${TARGET} PRIVATE RG_USE_SURFACE_WIN32)
+     endif()
+-    if(UNIX)
++    if(APPLE)
++        set_target_properties(RayTracedGL1 PROPERTIES
++            INTERFACE_INCLUDE_DIRECTORIES "$ENV{RTGL1_SDK_PATH}/Include"
++            IMPORTED_LOCATION       "$ENV{RTGL1_SDK_PATH}/Build/libRayTracedGL1.dylib"
++            IMPORTED_LOCATION_DEBUG "$ENV{RTGL1_SDK_PATH}/Build/Debug/libRayTracedGL1.dylib"
++        )
++        target_compile_definitions(${TARGET} PRIVATE RG_USE_SURFACE_METAL)
++        target_compile_definitions(${TARGET} PRIVATE ZLIB_CONST)
++    elseif(UNIX)
+         set_target_properties(RayTracedGL1 PROPERTIES
+             INTERFACE_INCLUDE_DIRECTORIES "$ENV{RTGL1_SDK_PATH}/Include"
+             IMPORTED_LOCATION       "$ENV{RTGL1_SDK_PATH}/Build/RelWithDebInfo/libRayTracedGL1.so"
+diff --git a/prboom2/src/MAC/ResolutionDataSource.m b/prboom2/src/MAC/ResolutionDataSource.m
+index 8f484ba..8668a67 100644
+--- a/prboom2/src/MAC/ResolutionDataSource.m
++++ b/prboom2/src/MAC/ResolutionDataSource.m
+@@ -26,7 +26,7 @@
+ 
+ @implementation ResolutionDataSource
+ 
+-static int resolutionSort(id first, id second, void *context)
++static NSInteger resolutionSort(id first, id second, void *context)
+ {
+ 	NSArray *firstComponents = [first componentsSeparatedByString:@"x"];
+ 	NSArray *secondComponents = [second componentsSeparatedByString:@"x"];
+diff --git a/prboom2/src/RT/rt_main.c b/prboom2/src/RT/rt_main.c
+index 520734f..fa9dfbe 100644
+--- a/prboom2/src/RT/rt_main.c
++++ b/prboom2/src/RT/rt_main.c
+@@ -28,7 +28,11 @@
+ 
+ #include <SDL_timer.h>
+ #include <SDL_syswm.h>
++#ifdef __APPLE__
++#include <SDL_metal.h>
++#else
+ #include <GL/glu.h>
++#endif
+ 
+ #include "doomstat.h"
+ #include "doomtype.h"
+@@ -64,6 +68,12 @@ void RT_Init()
+     .hinstance = wmInfo.info.win.hinstance,
+     .hwnd = wmInfo.info.win.window
+   };
++#elif defined(__APPLE__)
++  rtmain.metal_view = SDL_Metal_CreateView(sdl_window);
++  RgMetalSurfaceCreateInfo metalInfo =
++  {
++    .pLayer = (const CAMetalLayer *)SDL_Metal_GetLayer(rtmain.metal_view)
++  };
+ #else
+   RgXlibSurfaceCreateInfo x11Info =
+   {
+@@ -79,6 +89,8 @@ void RT_Init()
+ 
+   #if WIN32
+     .pWin32SurfaceInfo = &win32Info,
++  #elif defined(__APPLE__)
++    .pMetalSurfaceCreateInfo = &metalInfo,
+   #else
+     .pXlibSurfaceCreateInfo = &x11Info,
+   #endif
+@@ -170,6 +182,13 @@ void RT_Destroy(void)
+   RgResult r = rgDestroyInstance(rtmain.instance);
+   RG_CHECK(r);
+ 
++#ifdef __APPLE__
++  if (rtmain.metal_view != NULL)
++  {
++    SDL_Metal_DestroyView(rtmain.metal_view);
++  }
++#endif
++
+   memset(&rtmain, 0, sizeof(rtmain));
+ }
+ 
+diff --git a/prboom2/src/RT/rt_main.h b/prboom2/src/RT/rt_main.h
+index 0978a61..0c0a26d 100644
+--- a/prboom2/src/RT/rt_main.h
++++ b/prboom2/src/RT/rt_main.h
+@@ -40,6 +40,9 @@ typedef struct
+   RgInstance instance;
+ 
+   SDL_Window *window;
++#ifdef __APPLE__
++  void *metal_view;
++#endif
+ 
+   float mat_view[4][4];
+   float mat_projectionvk[4][4];
+diff --git a/prboom2/src/RT/rt_preprocess.c b/prboom2/src/RT/rt_preprocess.c
+index 4e67ae1..5625702 100644
+--- a/prboom2/src/RT/rt_preprocess.c
++++ b/prboom2/src/RT/rt_preprocess.c
+@@ -40,7 +40,13 @@
+ #include "WIN/win_fopen.h"
+ #endif
+ 
++#ifdef __APPLE__
++#include <OpenGL/glu.h>
++/* macOS GLU does not expose the _GLUfuncptr typedef used for gluTessCallback. */
++#define _GLUfuncptr void (*)()
++#else
+ #include <GL/glu.h>
++#endif
+ 
+ #include "doomtype.h"
+ #include "lprintf.h"
+diff --git a/prboom2/src/gl_opengl.h b/prboom2/src/gl_opengl.h
+index 59d7857..97f706f 100644
+--- a/prboom2/src/gl_opengl.h
++++ b/prboom2/src/gl_opengl.h
+@@ -45,7 +45,7 @@
+ #include <SDL_opengl.h>
+ 
+ #if SDL_VERSION_ATLEAST(1, 3, 0)
+-#if defined(__MACOSX__)
++#if defined(__APPLE__) || defined(__MACOSX__)
+ #include <OpenGL/gl.h>	/* Header File For The OpenGL Library */
+ #include <OpenGL/glu.h>	/* Header File For The GLU Library */
+ #elif defined(__MACOS__)
+@@ -57,6 +57,12 @@
+ #endif
+ #endif
+ 
++/* macOS OpenGL.framework's glu.h does not expose the _GLUfuncptr typedef that
++ * the Windows GLU headers use for gluTessCallback. */
++#if defined(__APPLE__) && !defined(_GLUfuncptr)
++#define _GLUfuncptr void (*)()
++#endif
++
+ #include "doomtype.h"
+ 
+ #if !defined(GL_DEPTH_STENCIL_EXT)
+diff --git a/prboom2/src/lprintf.h b/prboom2/src/lprintf.h
+index e85b483..f3b6fa3 100644
+--- a/prboom2/src/lprintf.h
++++ b/prboom2/src/lprintf.h
+@@ -35,6 +35,7 @@
+ #define __LPRINTF__
+ 
+ #include <stdarg.h>
++#include <stddef.h>
+ 
+ typedef enum                /* Logical output levels */
+ {

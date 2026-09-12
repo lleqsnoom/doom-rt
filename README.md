@@ -1,5 +1,9 @@
 Ray-traced Doom (PrBoom-Plus-RT) run directory for Omarchy (Arch, Hyprland/Wayland) on Intel Arc A770.
 
+> macOS / Apple Silicon port: see [`macos/`](macos/). It builds the same game against a
+> Metal-backed renderer (patched MoltenVK with experimental ray tracing) and runs on an
+> M4 Max at ~44 FPS on Doom 2 `demo1`.
+
 # Layout
 
 - `run.sh` — launcher. Forces SDL to X11 (the RT renderer uses an Xlib Vulkan surface), prefers the bundled `libRayTracedGL1.so`, defaults to `doom2.wad`, and passes `-iwadrt ovrd/map_metainfo_doom2.txt` (community Doom 2 lighting data, without which the engine has no sector lights).

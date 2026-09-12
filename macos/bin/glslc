@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""glslc -> glslangValidator shim.
+
+There is no Vulkan SDK / glslc on this machine. This shim accepts the subset of
+glslc arguments RTGL1's shader build uses, enables glslang's #include support
+(glslc does this implicitly), and emits SPIR-V with glslangValidator.
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+
+args = sys.argv[1:]
+env = "vulkan1.2"
+out = None
+inp = None
+incs = []
+defs = []
+
+i = 0
+while i < len(args):
+    a = args[i]
+    if a.startswith("--target-env="):
+        env = a.split("=", 1)[1]
+    elif a == "-o":
+        i += 1
+        out = args[i]
+    elif a == "-I":
+        i += 1
+        incs.append("-I" + args[i])
+    elif a.startswith("-I"):
+        incs.append(a)
+    elif a.startswith("-D"):
+        defs.append(a)
+    elif a in ("-O", "-g", "-Wall"):
+        pass
+    else:
+        inp = a
+    i += 1
+
+incs.insert(0, "-I" + os.path.dirname(os.path.abspath(inp)))
+
+with open(inp, "r", errors="replace") as handle:
+    source = handle.read()
+
+if "GL_GOOGLE_include_directive" not in source:
+    lines = source.splitlines(keepends=True)
+    insert = 0
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("#version"):
+            insert = index + 1
+            break
+    lines.insert(insert, "#extension GL_GOOGLE_include_directive : require\n")
+    source = "".join(lines)
+
+suffix = os.path.splitext(inp)[1]
+fd, tmp = tempfile.mkstemp(suffix=suffix)
+with os.fdopen(fd, "w") as handle:
+    handle.write(source)
+
+try:
+    result = subprocess.run(
+        ["glslangValidator", "-V", "--target-env", env] + incs + defs + ["-o", out, tmp],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if result.returncode != 0:
+        sys.stdout.write(result.stdout or "")
+        sys.exit(result.returncode)
+    sys.exit(0)
+finally:
+    os.remove(tmp)

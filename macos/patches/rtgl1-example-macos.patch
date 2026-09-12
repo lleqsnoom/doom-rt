@@ -1,0 +1,248 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1979b5b..cc01f94 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -282,6 +282,10 @@ if (RG_WITH_EXAMPLES)
+     target_link_libraries(RtglExample RayTracedGL1)
+     target_link_libraries(RtglExample glfw)
+     target_include_directories(RtglExample PUBLIC Tests/Libs/glm)
++    if (APPLE)
++        set_source_files_properties(Tests/RtglTest.cpp PROPERTIES COMPILE_OPTIONS "-x;objective-c++")
++        target_link_libraries(RtglExample "-framework Cocoa" "-framework QuartzCore" "-framework Metal")
++    endif()
+ endif()
+ 
+ # VS hot-reload - disabled because of glaze
+diff --git a/Source/DebugPrint.h b/Source/DebugPrint.h
+index a7c4ea9..bde58c5 100644
+--- a/Source/DebugPrint.h
++++ b/Source/DebugPrint.h
+@@ -63,7 +63,7 @@ namespace debug
+             }
+ 
+             auto str =
+-                std::vformat( msg, std::make_format_args( std::forward< Args >( args )... ) );
++                std::vformat( msg, std::make_format_args( args... ) );
+ 
+             Print( severity, std::string_view( str ) );
+         }
+diff --git a/Source/GltfExporter.cpp b/Source/GltfExporter.cpp
+index 86073c7..e1d6634 100644
+--- a/Source/GltfExporter.cpp
++++ b/Source/GltfExporter.cpp
+@@ -42,8 +42,8 @@
+ 
+ namespace
+ {
+-template< class T >
+-void HashCombine( std::size_t& seed, const T& v )
++template< class S, class T >
++void HashCombine( S& seed, const T& v )
+ {
+     seed ^= std::hash< T >{}( v ) + 0x9e3779b9 + ( seed << 6 ) + ( seed >> 2 );
+ }
+diff --git a/Source/PhysicalDevice.cpp b/Source/PhysicalDevice.cpp
+index e61d84f..be5f024 100644
+--- a/Source/PhysicalDevice.cpp
++++ b/Source/PhysicalDevice.cpp
+@@ -112,24 +112,30 @@ uint32_t PhysicalDevice::GetMemoryTypeIndex( uint32_t memoryTypeBits,
+     }
+ 
+ 
+-    // for each memory type available for this device
+-    for( uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++ )
++    // Preferred: a type with the requested properties that also avoids the undesirable ones.
++    // Unified-memory devices (Apple Silicon) may only expose a host-visible type that is also
++    // device-local, so fall back to matching the requested properties alone.
++    for( uint32_t pass = 0; pass < 2; pass++ )
+     {
+-        // if type is available
+-        if( ( memoryTypeBits & 1u ) == 1 )
++        uint32_t bits = memoryTypeBits;
++
++        // for each memory type available for this device
++        for( uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++, bits >>= 1u )
+         {
+-            VkMemoryPropertyFlags flags = memoryProperties.memoryTypes[ i ].propertyFlags;
++            // if type is available
++            if( ( bits & 1u ) == 1u )
++            {
++                VkMemoryPropertyFlags flags = memoryProperties.memoryTypes[ i ].propertyFlags;
+ 
+-            bool                  isSuitable = ( flags & requirementsMask ) == requirementsMask;
+-            bool                  isIgnored  = ( flags & flagsToIgnore ) == flagsToIgnore;
++                bool isSuitable = ( flags & requirementsMask ) == requirementsMask;
++                bool isIgnored  = ( flags & flagsToIgnore ) == flagsToIgnore;
+ 
+-            if( isSuitable && !isIgnored )
+-            {
+-                return i;
++                if( isSuitable && ( pass == 1 || !isIgnored ) )
++                {
++                    return i;
++                }
+             }
+         }
+-
+-        memoryTypeBits >>= 1u;
+     }
+ 
+     throw RgException( RG_RESULT_GRAPHICS_API_ERROR,
+diff --git a/Source/Utils.h b/Source/Utils.h
+index c2a83c1..4a730de 100644
+--- a/Source/Utils.h
++++ b/Source/Utils.h
+@@ -198,9 +198,10 @@ namespace Utils
+     RgTransform MakeTransform( const RgFloat3D& up, const RgFloat3D& forward, float scale );
+     RgTransform MakeTransform( const RgFloat3D& position, const RgFloat3D& forward );
+ 
+-#ifndef M_PI
+-    constexpr double M_PI = 3.1415926535897932384626433;
++#ifdef M_PI
++    #undef M_PI
+ #endif
++    constexpr double M_PI = 3.1415926535897932384626433;
+ 
+     constexpr float DegToRad( float degrees )
+     {
+diff --git a/Source/VulkanDevice_Init.cpp b/Source/VulkanDevice_Init.cpp
+index d01a449..6a412ad 100644
+--- a/Source/VulkanDevice_Init.cpp
++++ b/Source/VulkanDevice_Init.cpp
+@@ -851,6 +851,73 @@ void RTGL1::VulkanDevice::CreateDevice()
+         .features = features,
+     };
+ 
++    // Only request features the physical device actually supports. Vulkan implementations such as
++    // MoltenVK reject vkCreateDevice outright if any requested feature is unavailable, so masking
++    // against the reported capabilities is required for portability.
++    {
++        VkPhysicalDeviceRobustness2FeaturesEXT supRobustness = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
++        };
++        VkPhysicalDeviceVulkan12Features supVulkan12 = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
++            .pNext = &supRobustness,
++        };
++        VkPhysicalDeviceMultiviewFeatures supMultiview = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
++            .pNext = &supVulkan12,
++        };
++        VkPhysicalDevice16BitStorageFeatures supStorage16 = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
++            .pNext = &supMultiview,
++        };
++        VkPhysicalDeviceSynchronization2FeaturesKHR supSync2 = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR,
++            .pNext = &supStorage16,
++        };
++        VkPhysicalDeviceRayTracingPipelineFeaturesKHR supRtPipeline = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
++            .pNext = &supSync2,
++        };
++        VkPhysicalDeviceAccelerationStructureFeaturesKHR supAs = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
++            .pNext = &supRtPipeline,
++        };
++        VkPhysicalDeviceFeatures2 supFeatures2 = {
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
++            .pNext = &supAs,
++        };
++        vkGetPhysicalDeviceFeatures2( physDevice->Get(), &supFeatures2 );
++
++        {
++            VkBool32*       requested = reinterpret_cast< VkBool32* >( &features );
++            const VkBool32* supported =
++                reinterpret_cast< const VkBool32* >( &supFeatures2.features );
++            constexpr size_t count = sizeof( VkPhysicalDeviceFeatures ) / sizeof( VkBool32 );
++            for( size_t i = 0; i < count; i++ )
++            {
++                requested[ i ] = ( requested[ i ] && supported[ i ] ) ? VK_TRUE : VK_FALSE;
++            }
++        }
++
++        robustness.nullDescriptor &= supRobustness.nullDescriptor;
++        vulkan12Features.samplerMirrorClampToEdge &= supVulkan12.samplerMirrorClampToEdge;
++        vulkan12Features.drawIndirectCount &= supVulkan12.drawIndirectCount;
++        vulkan12Features.shaderFloat16 &= supVulkan12.shaderFloat16;
++        vulkan12Features.shaderSampledImageArrayNonUniformIndexing &=
++            supVulkan12.shaderSampledImageArrayNonUniformIndexing;
++        vulkan12Features.shaderStorageBufferArrayNonUniformIndexing &=
++            supVulkan12.shaderStorageBufferArrayNonUniformIndexing;
++        vulkan12Features.runtimeDescriptorArray &= supVulkan12.runtimeDescriptorArray;
++        vulkan12Features.bufferDeviceAddress &= supVulkan12.bufferDeviceAddress;
++        multiviewFeatures.multiview &= supMultiview.multiview;
++        storage16.storageBuffer16BitAccess &= supStorage16.storageBuffer16BitAccess;
++        sync2Features.synchronization2 &= supSync2.synchronization2;
++        rtPipelineFeatures.rayTracingPipeline &= supRtPipeline.rayTracingPipeline;
++        asFeatures.accelerationStructure &= supAs.accelerationStructure;
++
++        physicalDeviceFeatures2.features = features;
++    }
++
+ 
+     std::vector< VkExtensionProperties > supportedDeviceExtensions;
+     {
+diff --git a/Tests/RtglTest.cpp b/Tests/RtglTest.cpp
+index 8fff6f2..76b8b3d 100644
+--- a/Tests/RtglTest.cpp
++++ b/Tests/RtglTest.cpp
+@@ -7,6 +7,8 @@
+ 
+ #ifdef _WIN32
+     #define RG_USE_SURFACE_WIN32
++#elif defined( __APPLE__ )
++    #define RG_USE_SURFACE_METAL
+ #else
+     #define RG_USE_SURFACE_XLIB
+ #endif
+@@ -22,10 +24,17 @@
+ #include <GLFW/glfw3.h>
+ #ifdef _WIN32
+     #define GLFW_EXPOSE_NATIVE_WIN32
++#elif defined( __APPLE__ )
++    #define GLFW_EXPOSE_NATIVE_COCOA
+ #else
+     #define GLFW_EXPOSE_NATIVE_X11
+ #endif
+ #include <GLFW/glfw3native.h>
++#ifdef __APPLE__
++    #import <Cocoa/Cocoa.h>
++    #import <Metal/Metal.h>
++    #import <QuartzCore/QuartzCore.h>
++#endif
+ 
+ #define GLM_FORCE_RADIANS
+ #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+@@ -719,6 +728,22 @@ int main( int argc, char* argv[] )
+         .hinstance = GetModuleHandle( NULL ),
+         .hwnd      = glfwGetWin32Window( g_GlfwHandle ),
+     };
++#elif defined( __APPLE__ )
++    NSWindow* nsWindow = (NSWindow*)glfwGetCocoaWindow( g_GlfwHandle );
++    NSView*   nsView   = nsWindow.contentView;
++    nsView.wantsLayer = YES;
++    CAMetalLayer* mtlLayer = (CAMetalLayer*)nsView.layer;
++    if( ![nsView.layer isKindOfClass:[CAMetalLayer class]] )
++    {
++        mtlLayer = [CAMetalLayer layer];
++        mtlLayer.device      = MTLCreateSystemDefaultDevice();
++        mtlLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
++        mtlLayer.framebufferOnly = NO;
++        nsView.layer = mtlLayer;
++    }
++    RgMetalSurfaceCreateInfo metalInfo = {
++        .pLayer = (const CAMetalLayer*)mtlLayer,
++    };
+ #else
+     RgXlibSurfaceCreateInfo xlibInfo = {
+         .dpy    = glfwGetX11Display(),
+@@ -732,6 +757,8 @@ int main( int argc, char* argv[] )
+ 
+ #ifdef _WIN32
+         .pWin32SurfaceInfo = &win32Info,
++#elif defined( __APPLE__ )
++        .pMetalSurfaceCreateInfo = &metalInfo,
+ #else
+         .pXlibSurfaceCreateInfo = &xlibInfo,
+ #endif
