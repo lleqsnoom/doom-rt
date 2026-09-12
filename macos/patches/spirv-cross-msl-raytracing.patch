@@ -1,0 +1,33 @@
+diff --git a/spirv_msl.cpp b/spirv_msl.cpp
+index 934ee5b..3c3419c 100644
+--- a/spirv_msl.cpp
++++ b/spirv_msl.cpp
+@@ -18962,6 +18962,28 @@ string CompilerMSL::builtin_type_decl(BuiltIn builtin, uint32_t id)
+ 	case BuiltInPrimitiveTriangleIndicesEXT:
+ 		return "uint3";
+ 
++	// Ray tracing function in
++	case BuiltInLaunchIdKHR:
++	case BuiltInLaunchSizeKHR:
++		return "uint3";
++	case BuiltInInstanceCustomIndexKHR:
++	case BuiltInHitKindKHR:
++	case BuiltInIncomingRayFlagsKHR:
++	case BuiltInRayGeometryIndexKHR:
++	case BuiltInCullMaskKHR:
++		return "uint";
++	case BuiltInWorldRayOriginKHR:
++	case BuiltInWorldRayDirectionKHR:
++	case BuiltInObjectRayOriginKHR:
++	case BuiltInObjectRayDirectionKHR:
++		return "float3";
++	case BuiltInRayTminKHR:
++	case BuiltInRayTmaxKHR:
++		return "float";
++	case BuiltInObjectToWorldKHR:
++	case BuiltInWorldToObjectKHR:
++		return "float4x3";
++
+ 	default:
+ 		return "unsupported-built-in-type";
+ 	}

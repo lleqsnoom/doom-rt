@@ -1,0 +1,214 @@
+diff --git a/Source/GeomInfoManager.cpp b/Source/GeomInfoManager.cpp
+index 0fc74c9..54acba8 100644
+--- a/Source/GeomInfoManager.cpp
++++ b/Source/GeomInfoManager.cpp
+@@ -84,7 +84,7 @@ bool RTGL1::GeomInfoManager::CopyFromStaging(VkCommandBuffer cmd, uint32_t frame
+                     offset *= sizeof(int32_t);
+ 
+                     // min of upper-bound size and max size of the group
+-                    uint64_t size = std::min(upperBoundSize, VertexCollectorFilterTypeFlags_GetAmountInGlobalArray(cf | pt | pm) * sizeof(int32_t));
++                    uint64_t size = std::min(upperBoundSize, static_cast<uint64_t>(VertexCollectorFilterTypeFlags_GetAmountInGlobalArray(cf | pt | pm)) * sizeof(int32_t));
+ 
+                     // copy to staging
+                     {
+diff --git a/Source/PhysicalDevice.cpp b/Source/PhysicalDevice.cpp
+index 9baae3d..ab941f6 100644
+--- a/Source/PhysicalDevice.cpp
++++ b/Source/PhysicalDevice.cpp
+@@ -100,6 +100,8 @@ uint32_t PhysicalDevice::GetMemoryTypeIndex(uint32_t memoryTypeBits, VkFlags req
+     }
+     
+ 
++    uint32_t fallbackIndex = ~0u;
++
+     // for each memory type available for this device
+     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
+     {
+@@ -115,11 +117,23 @@ uint32_t PhysicalDevice::GetMemoryTypeIndex(uint32_t memoryTypeBits, VkFlags req
+             {
+                 return i;
+             }
++
++            // On unified-memory GPUs (Apple Silicon) the only type that matches can also carry
++            // the "ignored" flags, so remember it and use it if nothing better exists.
++            if (isSuitable && fallbackIndex == ~0u)
++            {
++                fallbackIndex = i;
++            }
+         }
+ 
+         memoryTypeBits >>= 1u;
+     }
+ 
++    if (fallbackIndex != ~0u)
++    {
++        return fallbackIndex;
++    }
++
+     throw RgException(RG_GRAPHICS_API_ERROR, "Can't find memory type for given memory property flags (" + std::to_string(requirementsMask) + ")");
+     return 0;
+ }
+diff --git a/Source/Shaders/ShaderCommonGLSLFunc.h b/Source/Shaders/ShaderCommonGLSLFunc.h
+index 750a30d..b4c7dce 100644
+--- a/Source/Shaders/ShaderCommonGLSLFunc.h
++++ b/Source/Shaders/ShaderCommonGLSLFunc.h
+@@ -65,11 +65,6 @@ layout(
+     binding = BINDING_TEXTURES)
+     uniform sampler2D globalTextures[];
+ 
+-sampler2D getTexture(uint textureIndex)
+-{
+-    return globalTextures[nonuniformEXT(textureIndex)];
+-}
+-
+ vec4 getTextureSample(uint textureIndex, const vec2 texCoord)
+ {
+     return texture(globalTextures[nonuniformEXT(textureIndex)], texCoord);
+diff --git a/Source/Swapchain.cpp b/Source/Swapchain.cpp
+index a840b8b..ad27b76 100644
+--- a/Source/Swapchain.cpp
++++ b/Source/Swapchain.cpp
+@@ -60,8 +60,14 @@ Swapchain::Swapchain(VkDevice device, VkSurfaceKHR surface,
+         r = vkGetPhysicalDeviceSurfaceFormatsKHR(physDevice->Get(), surface, &formatCount, surfaceFormats.data());
+         VK_CHECKERROR(r);
+ 
++        // Prefer non-sRGB surface formats. RTGL1's final image already holds
++        // display-ready values, so an sRGB swapchain (which MoltenVK exposes on
++        // macOS) encodes them a second time and the whole image - 3D and 2D
++        // screens alike - comes out too bright.
+         std::vector<VkFormat> acceptFormats =
+         {
++            VK_FORMAT_B8G8R8A8_UNORM,
++            VK_FORMAT_R8G8B8A8_UNORM,
+             VK_FORMAT_R8G8B8A8_SRGB,
+             VK_FORMAT_B8G8R8A8_SRGB
+         };
+diff --git a/Source/Utils.h b/Source/Utils.h
+index add411e..156b90f 100644
+--- a/Source/Utils.h
++++ b/Source/Utils.h
+@@ -20,6 +20,12 @@
+ 
+ #pragma once
+ 
++#include <algorithm>
++#include <cassert>
++#include <cmath>
++#include <cstdint>
++#include <type_traits>
++
+ #include "Common.h"
+ #include "RTGL1/RTGL1.h"
+ 
+diff --git a/Source/Vma/vk_mem_alloc.h b/Source/Vma/vk_mem_alloc.h
+index 447bf01..46e6e2e 100644
+--- a/Source/Vma/vk_mem_alloc.h
++++ b/Source/Vma/vk_mem_alloc.h
+@@ -4019,7 +4019,6 @@ VMA_CALL_PRE void VMA_CALL_POST vmaDestroyImage(
+ #undef VMA_IMPLEMENTATION
+ 
+ #include <cstdint>
+-#include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+ #include <utility>
+@@ -4144,18 +4143,7 @@ static void* vma_aligned_alloc(size_t alignment, size_t size)
+ 
+ static void* vma_aligned_alloc(size_t alignment, size_t size)
+ {
+-#if defined(__APPLE__) && (defined(MAC_OS_X_VERSION_10_16) || defined(__IPHONE_14_0))
+-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_16 || __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_14_0
+-    // For C++14, usr/include/malloc/_malloc.h declares aligned_alloc()) only
+-    // with the MacOSX11.0 SDK in Xcode 12 (which is what adds
+-    // MAC_OS_X_VERSION_10_16), even though the function is marked
+-    // availabe for 10.15. That's why the preprocessor checks for 10.16 but
+-    // the __builtin_available checks for 10.15.
+-    // People who use C++17 could call aligned_alloc with the 10.15 SDK already.
+-    if (__builtin_available(macOS 10.15, iOS 13, *))
+-        return aligned_alloc(alignment, size);
+-#endif
+-#endif
++    // macOS extended malloc does not expose aligned_alloc(); use posix_memalign instead.
+     // alignment must be >= sizeof(void*)
+     if(alignment < sizeof(void*))
+     {
+diff --git a/Source/VulkanDevice.cpp b/Source/VulkanDevice.cpp
+index 2472b08..f23ca08 100644
+--- a/Source/VulkanDevice.cpp
++++ b/Source/VulkanDevice.cpp
+@@ -941,6 +941,11 @@ void VulkanDevice::Render(VkCommandBuffer cmd, const RgDrawFrameInfo &drawInfo)
+     // draw geometry such as HUD directly into the swapchain image
+     if (!drawInfo.disableRasterization)
+     {
++        // The swapchain raster pass loads the image that the previous effects/blits wrote.
++        // Make those writes visible first: without this barrier a tile-based GPU (Apple)
++        // can load stale tiles, which shows up as small block artifacts on HUD/menu text.
++        framebuffers->BarrierOne(cmd, frameIndex, currentResultImage);
++
+         rasterizer->DrawToSwapchain(cmd, frameIndex, currentResultImage, textureManager,
+                                     uniform->GetData()->view, uniform->GetData()->projection);
+     }
+@@ -1613,6 +1618,63 @@ void VulkanDevice::CreateDevice()
+     physicalDeviceFeatures2.pNext = &asFeatures;
+     physicalDeviceFeatures2.features = features;
+ 
++    // Some Vulkan implementations (notably MoltenVK) reject vkCreateDevice outright if any
++    // requested feature is unavailable. Mask every requested feature against what the device
++    // reports, so unsupported ones are disabled instead of aborting device creation.
++    {
++        VkPhysicalDeviceVulkan12Features supVulkan12 = {};
++        supVulkan12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
++
++        VkPhysicalDeviceMultiviewFeatures supMultiview = {};
++        supMultiview.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES;
++        supMultiview.pNext = &supVulkan12;
++
++        VkPhysicalDevice16BitStorageFeatures supStorage16 = {};
++        supStorage16.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
++        supStorage16.pNext = &supMultiview;
++
++        VkPhysicalDeviceSynchronization2FeaturesKHR supSync2 = {};
++        supSync2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
++        supSync2.pNext = &supStorage16;
++
++        VkPhysicalDeviceRayTracingPipelineFeaturesKHR supRtPipeline = {};
++        supRtPipeline.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
++        supRtPipeline.pNext = &supSync2;
++
++        VkPhysicalDeviceAccelerationStructureFeaturesKHR supAs = {};
++        supAs.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
++        supAs.pNext = &supRtPipeline;
++
++        VkPhysicalDeviceFeatures2 supFeatures2 = {};
++        supFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
++        supFeatures2.pNext = &supAs;
++        vkGetPhysicalDeviceFeatures2(physDevice->Get(), &supFeatures2);
++
++        {
++            VkBool32 *requested = reinterpret_cast<VkBool32 *>(&features);
++            const VkBool32 *supported = reinterpret_cast<const VkBool32 *>(&supFeatures2.features);
++            constexpr size_t count = sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32);
++            for (size_t i = 0; i < count; i++)
++            {
++                requested[i] = (requested[i] && supported[i]) ? VK_TRUE : VK_FALSE;
++            }
++        }
++
++        vulkan12Features.samplerMirrorClampToEdge &= supVulkan12.samplerMirrorClampToEdge;
++        vulkan12Features.runtimeDescriptorArray &= supVulkan12.runtimeDescriptorArray;
++        vulkan12Features.shaderSampledImageArrayNonUniformIndexing &= supVulkan12.shaderSampledImageArrayNonUniformIndexing;
++        vulkan12Features.shaderStorageBufferArrayNonUniformIndexing &= supVulkan12.shaderStorageBufferArrayNonUniformIndexing;
++        vulkan12Features.bufferDeviceAddress &= supVulkan12.bufferDeviceAddress;
++        vulkan12Features.drawIndirectCount &= supVulkan12.drawIndirectCount;
++        multiviewFeatures.multiview &= supMultiview.multiview;
++        storage16.storageBuffer16BitAccess &= supStorage16.storageBuffer16BitAccess;
++        sync2Features.synchronization2 &= supSync2.synchronization2;
++        rtPipelineFeatures.rayTracingPipeline &= supRtPipeline.rayTracingPipeline;
++        asFeatures.accelerationStructure &= supAs.accelerationStructure;
++
++        physicalDeviceFeatures2.features = features;
++    }
++
+     std::vector<VkExtensionProperties> supportedDeviceExtensions;
+     uint32_t supportedExtensionsCount;
+ 
