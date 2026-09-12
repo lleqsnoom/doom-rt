@@ -20,16 +20,32 @@ There is no shipped Vulkan ray-tracing support on macOS. The stack is:
 
 | Layer | Project | What it provides |
 |---|---|---|
-| Driver | `dttdrv/MoltenVK` branch `macgaming/ray-query-pr` (PR #2771) | Experimental Metal ray tracing: `VK_KHR_acceleration_structure`, `VK_KHR_ray_tracing_pipeline`, `vkCmdTraceRaysKHR` |
+| Driver | `dttdrv/MoltenVK` branch `macgaming/ray-query-pr`, commit `d5e5032` (PR #2771) | Experimental Metal ray tracing: `VK_KHR_acceleration_structure`, `VK_KHR_ray_tracing_pipeline`, `vkCmdTraceRaysKHR` |
 | Shader codegen | `dttdrv/SPIRV-Cross` commit `6c153db` + local patch | SPIR-V to Metal Shading Language ray-tracing translation |
-| Renderer | `lleqsnoom/RayTracedGL1` branch `arc-a770-fixes` (RTGL1, API 1.01) | Path tracer: GI, reflections, denoising (SVGF), bloom |
+| Renderer | `lleqsnoom/RayTracedGL1` branch `arc-a770-fixes`, commit `6e8e75e` (RTGL1, API 1.01) | Path tracer: GI, reflections, denoising (SVGF), bloom |
 | Game | `lleqsnoom/prboom-plus-rt` branch `doom2-rt-improvements` | Doom engine with RTGL1-driven rendering |
+
+The MoltenVK, SPIRV-Cross, RTGL1 and Vulkan-Headers revisions are pinned (the
+`*_REV` variables in `common.sh` and the build scripts), so a rebuild reproduces
+the verified stack.
 
 MoltenVK only exposes the ray-tracing extensions when
 `MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1` is set in the environment. The
 launcher sets it automatically.
 
 ## Quick start
+
+From the repository root, the `doom-rt-mac` launcher wraps `macos/run.sh`:
+
+```sh
+./doom-rt-mac -wad "/path/to/Doom2.wad" -warp 1 -skill 3
+```
+
+`-wad` sets the IWAD (defaults to `Doom2.wad` in the run directory) and any other
+arguments are passed to the game (`-file`, `-warp`, `-skill`, ...). Add
+`DOOMRT_NOSOUND=1` if startup hangs on `I_InitSound`.
+
+To build from scratch:
 
 Requirements: Apple Silicon Mac, Python 3, `cmake`, `ninja`, `glslangValidator`,
 SDL2 (Homebrew `sdl2` / `sdl2-compat`), `libvorbis`, `libogg`, `libmad`.
@@ -61,6 +77,16 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 - Mouse look, including up/down, is on by default. Toggle it in game with the
   `Mouse Look` key (default `\`) or Options > General > Enable Mouselook. Flip the
   vertical axis with `Invert Mouse`; clamp the angle with `Max View Pitch`.
+- If audio stutters, it is almost always the output device. The mixer already runs
+  on SDL's own audio thread, so force a clean device instead:
+  `DOOMRT_AUDIO_DEVICE="Głośniki (MacBook Pro)" ./doom-rt-mac -wad ...`. Bluetooth
+  headphones and virtual drivers (e.g. Boom 3D) add latency and dropouts.
+- Fullscreen: pass `-fullscreen` (or press Command-F in game). RT mode uses true
+  fullscreen; `SDL_WINDOW_FULLSCREEN_DESKTOP` only fills the usable area under the
+  menu bar with the Metal backend.
+- Retina: RT mode renders at the display's backing scale (3456x2234 on the built-in
+  panel), so the HUD and final image are not upscaled from 1x points. The 3D detail
+  is still set by `rt_renderscale`.
 - The launcher uses a Sound-OFF default only when `DOOMRT_NOSOUND=1` is set; see
   Known issues.
 - For a crisp, non-upscaled image run the window at 720p (`screen_resolution
@@ -120,6 +146,20 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
   the mouse looks up/down without touching the menus. The engine already feeds the
   pitch into the RT camera (`R_BuildModelViewMatrix` has a `VID_MODERT` branch), so
   no renderer change was needed.
+- **Audio output device override** (`SDL/i_sound.c`). Opens playback with
+  `SDL_OpenAudioDevice` and honours `DOOMRT_AUDIO_DEVICE` to select a named output
+  device, so a glitchy virtual driver or a Bluetooth sink can be bypassed while the
+  system default stays unchanged.
+- **Zero the audio callback buffer** (`SDL/i_sound.c`). SDL does not clear the
+  buffer handed to the callback and the mixer adds into it; the original code only
+  zeroed it when `snd_midiplayer == NULL`, so the previous buffer was reused and
+  sounds stacked into a continuous buzz. It is now cleared on every call.
+- **True fullscreen in RT mode** (`SDL/i_video.c`). Adds `VID_MODERT` to the
+  `SDL_WINDOW_FULLSCREEN` branch; the desktop-fullscreen flag only produced a
+  usable-area window with the Metal backend.
+- **High-DPI / Retina output** (`SDL/i_video.c`). RT windows set
+  `SDL_WINDOW_ALLOW_HIGHDPI`, so the Metal drawable matches the panel (3456x2234)
+  instead of 1x points (1728x1117) upscaled by the display.
 - **Metal surface** (`RT/rt_main.c`). Creates the swapchain surface from an
   `SDL_Metal_CreateView` layer via `RgMetalSurfaceCreateInfo` instead of Xlib, and
   destroys the view on shutdown.
@@ -130,10 +170,13 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 
 ## Known issues
 
-- **Audio startup can hang.** `SDL_OpenAudio` blocks on machines/sessions without
-  an audio output device. If the game stops at `I_InitSound:`, launch with
-  `DOOMRT_NOSOUND=1 ./run.sh`. This is an SDL/CoreAudio environment issue, not
-  specific to the renderer.
+- **No sound.** Sound effects play through the default macOS output device. If you
+  hear nothing, first check the system output is not muted (`osascript -e 'get
+  volume settings'`). Music is unavailable in this build (compiled without
+  SDL_mixer); the engine logs `I_InitMusic: Was compiled without SDL_Mixer
+  support`. As a last resort `DOOMRT_NOSOUND=1` starts without audio, and an
+  `SDL_OpenAudio` start-up hang has been reported on machines without an output
+  device, though it did not reproduce here.
 - **Doom 2 sector lights are approximate.** Proper lighting comes from
   `ovrd/map_metainfo_doom2.txt` (the `doom2rt-0.9` addon by rellik66), which is
   only distributed through ModDB and needs a browser download. Without it the
@@ -146,6 +189,7 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 
 ```
 macos/
+  common.sh                 # shared defaults, pinned revisions and helpers
   build-all.sh              # build everything end to end
   build-moltenvk.sh         # MoltenVK + patched SPIRV-Cross
   build-rtgl1.sh            # RTGL1 renderer (game, API 1.01) + shaders

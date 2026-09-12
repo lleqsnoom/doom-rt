@@ -131,6 +131,117 @@ index 4e67ae1..5625702 100644
  
  #include "doomtype.h"
  #include "lprintf.h"
+diff --git a/prboom2/src/SDL/i_sound.c b/prboom2/src/SDL/i_sound.c
+index 2d05598..d5f3297 100644
+--- a/prboom2/src/SDL/i_sound.c
++++ b/prboom2/src/SDL/i_sound.c
+@@ -148,6 +148,9 @@ SDL_mutex *sfxmutex;
+ // lock for updating any params related to music
+ SDL_mutex *musmutex;
+ 
++// playback device opened by I_InitSound (0 when closed)
++static SDL_AudioDeviceID snd_device = 0;
++
+ 
+ /* cph
+  * stopchan
+@@ -489,8 +492,9 @@ static void I_UpdateSound(void *unused, Uint8 *stream, int len)
+   // Mixing channel index.
+   int       chan;
+ 
+-  if (snd_midiplayer == NULL) // This is but a temporary fix. Please do remove after a more definitive one!
+-    memset(stream, 0, len);
++  // SDL does not clear the callback buffer, and the mixer below adds into it,
++  // so it must be zeroed on every call.
++  memset(stream, 0, len);
+ 
+   // NSM: when dumping sound, ignore the callback calls and only
+   // service dumping calls
+@@ -637,7 +641,11 @@ void I_ShutdownSound(void)
+ #ifdef HAVE_MIXER
+     Mix_CloseAudio();
+ #endif
+-    SDL_CloseAudio();
++    if (snd_device != 0)
++    {
++      SDL_CloseAudioDevice(snd_device);
++      snd_device = 0;
++    }
+     lprintf(LO_INFO, "\n");
+     sound_inited = false;
+ 
+@@ -701,7 +709,11 @@ void I_InitSound(void)
+   }
+ #endif // HAVE_MIXER
+   {
+-    // Open the audio device
++    // Open the audio device. DOOMRT_AUDIO_DEVICE optionally selects a named
++    // output device instead of the system default (useful to bypass a virtual
++    // driver that introduces glitches).
++    const char *device_name = SDL_getenv("DOOMRT_AUDIO_DEVICE");
++    SDL_AudioSpec have;
+     audio.freq = snd_samplerate;
+ #if ( SDL_BYTEORDER == SDL_BIG_ENDIAN )
+     audio.format = AUDIO_S16MSB;
+@@ -711,16 +723,22 @@ void I_InitSound(void)
+     audio.channels = 2;
+     audio.samples = snd_samplecount * snd_samplerate / 11025;
+     audio.callback = I_UpdateSound;
+-    if ( SDL_OpenAudio(&audio, NULL) < 0 )
++    snd_device = SDL_OpenAudioDevice((device_name && *device_name) ? device_name : NULL,
++                                     0, &audio, &have, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
++    if ( snd_device == 0 )
+     {
+       lprintf(LO_INFO, "couldn't open audio with desired format (%s))\n", SDL_GetError());
+       nosfxparm = true;
+       nomusicparm = true;
+       return;
+     }
++    // Adopt the device's actual rate; the mixer derives every channel step from
++    // snd_samplerate, so a mismatch would retime all sound effects.
++    snd_samplerate = have.freq;
+     sound_inited_once = true;//e6y
+     sound_inited = true;
+-    lprintf(LO_INFO, " configured audio device with %d samples/slice\n", audio.samples);
++    lprintf(LO_INFO, " configured audio device '%s': %d Hz, %d samples/slice\n",
++             (device_name && *device_name) ? device_name : "default", have.freq, have.samples);
+   }
+   if (first_sound_init)
+   {
+@@ -739,7 +757,7 @@ void I_InitSound(void)
+ 
+   // Finished initialization.
+   lprintf(LO_INFO, "I_InitSound: sound module ready\n");
+-  SDL_PauseAudio(0);
++  SDL_PauseAudioDevice(snd_device, 0);
+ }
+ 
+ 
+diff --git a/prboom2/src/SDL/i_video.c b/prboom2/src/SDL/i_video.c
+index 72a2526..560cdcf 100644
+--- a/prboom2/src/SDL/i_video.c
++++ b/prboom2/src/SDL/i_video.c
+@@ -1263,12 +1263,19 @@ void I_UpdateVideoMode(void)
+   // Fullscreen desktop for software renderer only - DTIED
+   if (desired_fullscreen)
+   {
+-    if (V_GetMode() == VID_MODEGL || exclusive_fullscreen)
++    // RT needs true fullscreen: SDL_WINDOW_FULLSCREEN_DESKTOP only fills the
++    // usable area (under the menu bar) with the Metal backend here.
++    if (V_GetMode() == VID_MODEGL || V_GetMode() == VID_MODERT || exclusive_fullscreen)
+       init_flags |= SDL_WINDOW_FULLSCREEN;
+     else
+       init_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+   }
+ 
++  // Render at the display's backing scale (Retina) in RT mode; without this the
++  // Metal drawable stays at 1x points and is upscaled to the panel.
++  if (V_GetMode() == VID_MODERT)
++    init_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
++
+   // In windowed mode, the window can be resized while the game is
+   // running.  This feature is disabled on OS X, as it adds an ugly
+   // scroll handle to the corner of the screen.
 diff --git a/prboom2/src/d_main.c b/prboom2/src/d_main.c
 index 2378d91..1c18a2c 100644
 --- a/prboom2/src/d_main.c
