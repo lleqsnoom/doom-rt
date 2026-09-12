@@ -2,7 +2,7 @@ Ray-traced Doom (PrBoom-Plus-RT) run directory for Omarchy (Arch, Hyprland/Wayla
 
 > macOS / Apple Silicon port: see [`macos/`](macos/). It builds the same game against a
 > Metal-backed renderer (patched MoltenVK with experimental ray tracing) and runs on an
-> M4 Max at ~44 FPS on Doom 2 `demo1`.
+> M4 Max at ~44 FPS on Doom 2 `demo1`. Launch it with `./doom-rt-mac -wad "/path/to/Doom2.wad"`.
 
 # Layout
 

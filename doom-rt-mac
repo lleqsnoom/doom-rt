@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Launch ray-traced Doom on macOS.
+#
+#   ./doom-rt-mac -wad "/path/to/Doom2.wad" [extra game args]
+#
+# -wad selects the IWAD (defaults to Doom2.wad in the run directory). Everything
+# else is passed straight to the game, e.g. -warp 1 -skill 3, or -file pwad.wad.
+#
+# Environment:
+#   WORK / RUN_DIR      staged run directory (defaults in macos/common.sh)
+#   DOOMRT_NOSOUND=1    start without sound (needed if startup hangs on I_InitSound)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Prefer a run directory staged next to this launcher when one exists.
+if [ -z "${RUN_DIR:-}" ] && [ -d "$HERE/doom-rt-run" ]; then
+    RUN_DIR="$HERE/doom-rt-run"
+    export RUN_DIR
+fi
+
+# common.sh sets SCRIPT_DIR to the macos/ directory.
+. "$HERE/macos/common.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: ./doom-rt-mac -wad "/path/to/Doom2.wad" [extra game args]
+
+  -wad <path>   IWAD to play (default: Doom2.wad in the run directory)
+  -h, --help    show this help
+
+Extra arguments are passed to the game, for example:
+
+  ./doom-rt-mac -wad "/games/Doom2.wad" -warp 1 -skill 3
+  ./doom-rt-mac -wad "/games/Doom2.wad" -file mymap.wad
+  ./doom-rt-mac -wad "/games/Doom2.wad" -fullscreen
+
+-fullscreen starts in fullscreen; Command-F toggles it in game.
+
+Set DOOMRT_NOSOUND=1 if startup hangs on "I_InitSound".
+Set DOOMRT_AUDIO_DEVICE="<name>" to force an output device (e.g. the built-in
+speakers) if audio stutters over Bluetooth or a virtual driver.
+EOF
+}
+
+WAD=""
+GAME_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -wad|--wad)
+            shift
+            if [ $# -eq 0 ]; then
+                echo "doom-rt-mac: -wad requires a path" >&2
+                exit 2
+            fi
+            WAD="$1"
+            shift
+            ;;
+        -wad=*|--wad=*)
+            WAD="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            GAME_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$WAD" ]; then
+    WAD="$RUN_DIR/Doom2.wad"
+fi
+
+if [ ! -f "$WAD" ]; then
+    echo "doom-rt-mac: WAD not found: $WAD" >&2
+    exit 1
+fi
+
+# Make the path absolute so it survives run.sh's cd into the run directory.
+WAD="$(cd "$(dirname "$WAD")" && pwd)/$(basename "$WAD")"
+
+if [ "${#GAME_ARGS[@]}" -gt 0 ]; then
+    exec "$SCRIPT_DIR/run.sh" -iwad "$WAD" "${GAME_ARGS[@]}"
+else
+    exec "$SCRIPT_DIR/run.sh" -iwad "$WAD"
+fi
