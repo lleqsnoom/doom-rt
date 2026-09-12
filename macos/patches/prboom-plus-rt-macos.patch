@@ -32,6 +32,21 @@ index 8f484ba..8668a67 100644
  {
  	NSArray *firstComponents = [first componentsSeparatedByString:@"x"];
  	NSArray *secondComponents = [second componentsSeparatedByString:@"x"];
+diff --git a/prboom2/src/RT/rt_geom.c b/prboom2/src/RT/rt_geom.c
+index fa4a6ae..758b562 100644
+--- a/prboom2/src/RT/rt_geom.c
++++ b/prboom2/src/RT/rt_geom.c
+@@ -175,7 +175,9 @@ static void AddFlat(const int sectornum, dboolean ceiling, const visplane_t *pla
+     {
+       if (!RT_HasSectorLightingData())
+       {
+-        w = 1.0f;
++        // Fallback light for maps without lighting metainfo. Scaled down from 1.0,
++        // as one full-intensity light per ceiling reads too bright.
++        w = 0.8f;
+         c.data[0] = c.data[1] = c.data[2] = 1.0f;
+       }
+ 
 diff --git a/prboom2/src/RT/rt_main.c b/prboom2/src/RT/rt_main.c
 index 520734f..fa9dfbe 100644
 --- a/prboom2/src/RT/rt_main.c
@@ -116,6 +131,53 @@ index 4e67ae1..5625702 100644
  
  #include "doomtype.h"
  #include "lprintf.h"
+diff --git a/prboom2/src/d_main.c b/prboom2/src/d_main.c
+index 2378d91..1c18a2c 100644
+--- a/prboom2/src/d_main.c
++++ b/prboom2/src/d_main.c
+@@ -268,6 +268,32 @@ gamestate_t    wipegamestate = GS_DEMOSCREEN;
+ extern dboolean setsizeneeded;
+ extern int     showMessages;
+ 
++static void D_FrameLimit(void)
++{
++  static unsigned long long next_frame_us = 0;
++  unsigned long long now_us;
++  unsigned long long step_us;
++  long long wait_us;
++
++  if (cap_fps <= 0)
++    return;
++
++  now_us = (unsigned long long)SDL_GetTicks() * 1000;
++  step_us = 1000000 / (unsigned long long)cap_fps;
++
++  if (next_frame_us == 0)
++    next_frame_us = now_us;
++
++  wait_us = (long long)next_frame_us - (long long)now_us;
++  if (wait_us > 0 && wait_us < (long long)step_us * 2)
++    I_uSleep((unsigned long)wait_us);
++
++  next_frame_us += step_us;
++
++  if (next_frame_us < now_us || next_frame_us > now_us + step_us * 2)
++    next_frame_us = now_us + step_us;
++}
++
+ void D_Display (fixed_t frac)
+ {
+   static dboolean isborderstate        = false;
+@@ -305,6 +331,9 @@ void D_Display (fixed_t frac)
+   if (!I_StartDisplay())
+     return;
+ 
++  if (movement_smooth && !capturing_video && !doSkip)
++    D_FrameLimit();
++
+   if (V_GetMode() == VID_MODERT)
+   {
+     RT_StartFrame();
 diff --git a/prboom2/src/gl_opengl.h b/prboom2/src/gl_opengl.h
 index 59d7857..97f706f 100644
 --- a/prboom2/src/gl_opengl.h
@@ -142,6 +204,86 @@ index 59d7857..97f706f 100644
  #include "doomtype.h"
  
  #if !defined(GL_DEPTH_STENCIL_EXT)
+diff --git a/prboom2/src/hu_stuff.c b/prboom2/src/hu_stuff.c
+index dc331c2..8ee16bc 100644
+--- a/prboom2/src/hu_stuff.c
++++ b/prboom2/src/hu_stuff.c
+@@ -53,6 +53,7 @@
+ #include "lprintf.h"
+ #include "e6y.h" //e6y
+ #include "g_overflow.h"
++#include <SDL_timer.h>
+ 
+ #define ARRAYSIZE(x) (sizeof(x)/sizeof(x[0]))
+ 
+@@ -154,6 +155,7 @@ static hu_itext_t     w_inputbuffer[MAXPLAYERS];
+ static hu_textline_t  w_coordx; //jff 2/16/98 new coord widget for automap
+ static hu_textline_t  w_coordy; //jff 3/3/98 split coord widgets automap
+ static hu_textline_t  w_coordz; //jff 3/3/98 split coord widgets automap
++static hu_textline_t  w_fps;    // FPS counter, top-right
+ static hu_textline_t  w_ammo;   //jff 2/16/98 new ammo widget for hud
+ static hu_textline_t  w_health; //jff 2/16/98 new health widget for hud
+ static hu_textline_t  w_armor;  //jff 2/16/98 new armor widget for hud
+@@ -495,6 +497,17 @@ void HU_Start(void)
+     VPT_ALIGN_LEFT_BOTTOM
+   );
+ 
++  // FPS counter, top-right corner
++  HUlib_initTextLine
++  (
++    &w_fps,
++    0, 1,
++    hu_font,
++    HU_FONTSTART,
++    CR_GREEN,
++    VPT_ALIGN_RIGHT_TOP
++  );
++
+   // create the hud health widget
+   // bargraph and number for amount of health,
+   // lower left or upper right of screen
+@@ -2683,6 +2696,41 @@ void HU_Drawer(void)
+ 
+   // display the interactive buffer for chat entry
+   HUlib_drawIText(&w_chat);
++
++  // FPS counter, top-right corner
++  {
++    static unsigned int fps_prev_tick = 0;
++    static unsigned int fps_frames = 0;
++    static int fps_value = 0;
++    char fpsstr[16];
++    int  i, w = 0;
++    unsigned int fps_now = SDL_GetTicks();
++
++    fps_frames++;
++    if (fps_now - fps_prev_tick >= 1000u)
++    {
++      fps_value = (int)(fps_frames * 1000u / (fps_now - fps_prev_tick));
++      fps_frames = 0;
++      fps_prev_tick = fps_now;
++    }
++
++    sprintf(fpsstr, "FPS: %d", fps_value);
++
++    HUlib_clearTextLine(&w_fps);
++    for (i = 0; fpsstr[i]; i++)
++      HUlib_addCharToTextLine(&w_fps, fpsstr[i]);
++
++    for (i = 0; fpsstr[i]; i++)
++    {
++      unsigned char c = (unsigned char)toupper((unsigned char)fpsstr[i]);
++      w += (c == ' ' || c < HU_FONTSTART || c > 127) ? 4 : hu_font[c - HU_FONTSTART].width;
++    }
++
++    w_fps.x = 320 - w - 2;
++    w_fps.y = HU_COORDXYZ_Y;
++    w_fps.w = 0;
++    HUlib_drawTextLine(&w_fps, false);
++  }
+ }
+ 
+ //
 diff --git a/prboom2/src/lprintf.h b/prboom2/src/lprintf.h
 index e85b483..f3b6fa3 100644
 --- a/prboom2/src/lprintf.h

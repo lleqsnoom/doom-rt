@@ -64,6 +64,25 @@ index 750a30d..b4c7dce 100644
  vec4 getTextureSample(uint textureIndex, const vec2 texCoord)
  {
      return texture(globalTextures[nonuniformEXT(textureIndex)], texCoord);
+diff --git a/Source/Swapchain.cpp b/Source/Swapchain.cpp
+index a840b8b..ad27b76 100644
+--- a/Source/Swapchain.cpp
++++ b/Source/Swapchain.cpp
+@@ -60,8 +60,14 @@ Swapchain::Swapchain(VkDevice device, VkSurfaceKHR surface,
+         r = vkGetPhysicalDeviceSurfaceFormatsKHR(physDevice->Get(), surface, &formatCount, surfaceFormats.data());
+         VK_CHECKERROR(r);
+ 
++        // Prefer non-sRGB surface formats. RTGL1's final image already holds
++        // display-ready values, so an sRGB swapchain (which MoltenVK exposes on
++        // macOS) encodes them a second time and the whole image - 3D and 2D
++        // screens alike - comes out too bright.
+         std::vector<VkFormat> acceptFormats =
+         {
++            VK_FORMAT_B8G8R8A8_UNORM,
++            VK_FORMAT_R8G8B8A8_UNORM,
+             VK_FORMAT_R8G8B8A8_SRGB,
+             VK_FORMAT_B8G8R8A8_SRGB
+         };
 diff --git a/Source/Utils.h b/Source/Utils.h
 index add411e..156b90f 100644
 --- a/Source/Utils.h
@@ -114,10 +133,22 @@ index 447bf01..46e6e2e 100644
      if(alignment < sizeof(void*))
      {
 diff --git a/Source/VulkanDevice.cpp b/Source/VulkanDevice.cpp
-index 2472b08..89ec559 100644
+index 2472b08..f23ca08 100644
 --- a/Source/VulkanDevice.cpp
 +++ b/Source/VulkanDevice.cpp
-@@ -1613,6 +1613,63 @@ void VulkanDevice::CreateDevice()
+@@ -941,6 +941,11 @@ void VulkanDevice::Render(VkCommandBuffer cmd, const RgDrawFrameInfo &drawInfo)
+     // draw geometry such as HUD directly into the swapchain image
+     if (!drawInfo.disableRasterization)
+     {
++        // The swapchain raster pass loads the image that the previous effects/blits wrote.
++        // Make those writes visible first: without this barrier a tile-based GPU (Apple)
++        // can load stale tiles, which shows up as small block artifacts on HUD/menu text.
++        framebuffers->BarrierOne(cmd, frameIndex, currentResultImage);
++
+         rasterizer->DrawToSwapchain(cmd, frameIndex, currentResultImage, textureManager,
+                                     uniform->GetData()->view, uniform->GetData()->projection);
+     }
+@@ -1613,6 +1618,63 @@ void VulkanDevice::CreateDevice()
      physicalDeviceFeatures2.pNext = &asFeatures;
      physicalDeviceFeatures2.features = features;
  

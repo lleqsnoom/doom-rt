@@ -55,6 +55,17 @@ Each step caches its source tree under `WORK` (default
 Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 `./run-rtgl1-test.sh` build and run the upstream RTGL1 example scene.
 
+## In-game notes
+
+- A green `FPS: n` counter is drawn top-right.
+- The launcher uses a Sound-OFF default only when `DOOMRT_NOSOUND=1` is set; see
+  Known issues.
+- For a crisp, non-upscaled image run the window at 720p (`screen_resolution
+  "1280x720"`) with `rt_renderscale 5` (720): the render is then native 1:1.
+- Tune cost with `rt_renderscale` (render height) and `rt_bounce_quality`
+  (1 = single-bounce GI). `render_vsync 0` uncaps; the frame limiter caps at
+  `cap_fps`.
+
 ## Patches and why they exist
 
 ### MoltenVK / SPIRV-Cross
@@ -83,9 +94,25 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
   different on macOS).
 - **glslang shader fix**: removed an unused `sampler2D getTexture()` helper that
   newer glslang rejects ("sampler cannot be used as return type").
+- **Non-sRGB swapchain** (`Swapchain.cpp`). MoltenVK exposes sRGB surface formats,
+  and RTGL1 prefers them, but its final image is already display-ready, so the
+  sRGB swapchain encodes it a second time and the whole frame - 3D and 2D screens
+  alike - comes out too bright. The patch prefers `*_UNORM` formats.
+- **Barrier before the 2D overlay pass** (`VulkanDevice.cpp`). The swapchain
+  raster pass uses `loadOp = LOAD` on the image the effects/blits just wrote, but
+  its render-pass dependency had `srcAccessMask = 0`. On a tile-based Apple GPU
+  that loads stale tiles, which showed up as small 8x8/16x16 block artifacts and
+  flicker on the HUD, menus and FPS counter. The patch inserts the missing
+  `BarrierOne` before `DrawToSwapchain`.
 
 ### Game (`patches/prboom-plus-rt-macos.patch`)
 
+- **FPS counter** (`hu_stuff.c`). Green `FPS: n` text, top-right, computed from
+  `SDL_GetTicks` (the fork's `renderer_fps` only updates via `R_ShowStats`, which
+  reads 0 in RT mode here).
+- **Frame limiter + dimmer fallback lights** (`d_main.c`, `RT/rt_geom.c`). Caps
+  uncapped rendering at `cap_fps` for steadier pacing, and scales the no-metainfo
+  fallback sector light from 1.0 to 0.8.
 - **Metal surface** (`RT/rt_main.c`). Creates the swapchain surface from an
   `SDL_Metal_CreateView` layer via `RgMetalSurfaceCreateInfo` instead of Xlib, and
   destroys the view on shutdown.
