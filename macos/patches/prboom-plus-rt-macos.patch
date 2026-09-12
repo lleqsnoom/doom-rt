@@ -296,3 +296,16 @@ index e85b483..f3b6fa3 100644
  
  typedef enum                /* Logical output levels */
  {
+diff --git a/prboom2/src/m_misc.c b/prboom2/src/m_misc.c
+index b039cbe..e6d3a36 100644
+--- a/prboom2/src/m_misc.c
++++ b/prboom2/src/m_misc.c
+@@ -1127,7 +1127,7 @@ default_t defaults[] =
+   {"sprites_doom_order", {&sprites_doom_order}, {DOOM_ORDER_STATIC},0,DOOM_ORDER_LAST - 1,
+    def_int,ss_stat},
+ 
+-  {"movement_mouselook", {&movement_mouselook},  {0},0,1,
++  {"movement_mouselook", {&movement_mouselook},  {1},0,1,
+    def_bool,ss_stat},
+   {"movement_mousenovert", {&movement_mousenovert},  {1},0,1,
+    def_bool,ss_stat},

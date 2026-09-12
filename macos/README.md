@@ -58,6 +58,9 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 ## In-game notes
 
 - A green `FPS: n` counter is drawn top-right.
+- Mouse look, including up/down, is on by default. Toggle it in game with the
+  `Mouse Look` key (default `\`) or Options > General > Enable Mouselook. Flip the
+  vertical axis with `Invert Mouse`; clamp the angle with `Max View Pitch`.
 - The launcher uses a Sound-OFF default only when `DOOMRT_NOSOUND=1` is set; see
   Known issues.
 - For a crisp, non-upscaled image run the window at 720p (`screen_resolution
@@ -113,6 +116,10 @@ Optional smoke test that does not need the game: `./build-rtgl1-example.sh` then
 - **Frame limiter + dimmer fallback lights** (`d_main.c`, `RT/rt_geom.c`). Caps
   uncapped rendering at `cap_fps` for steadier pacing, and scales the no-metainfo
   fallback sector light from 1.0 to 0.8.
+- **Mouse look on by default** (`m_misc.c`). `movement_mouselook` defaults to 1, so
+  the mouse looks up/down without touching the menus. The engine already feeds the
+  pitch into the RT camera (`R_BuildModelViewMatrix` has a `VID_MODERT` branch), so
+  no renderer change was needed.
 - **Metal surface** (`RT/rt_main.c`). Creates the swapchain surface from an
   `SDL_Metal_CreateView` layer via `RgMetalSurfaceCreateInfo` instead of Xlib, and
   destroys the view on shutdown.
