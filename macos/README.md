@@ -14,6 +14,25 @@ Measured on Doom 2 `demo1` with the built-in render scale settings:
 | 640p | `rt_renderscale 4`, `rt_fsr 0` | 50.0 |
 | 450p | `rt_renderscale 6`, `rt_fsr 4` | 51.7 |
 
+## Prebuilt binary (no build required)
+
+A self-contained Apple Silicon build is attached to the
+[latest release](https://github.com/lleqsnoom/doom-rt/releases):
+`prboom-rt-macos-arm64.zip` — the game, RTGL1, the patched MoltenVK, SDL and the
+audio libraries are all bundled.
+
+```sh
+unzip prboom-rt-macos-arm64.zip
+cd prboom-rt-macos-arm64
+xattr -dr com.apple.quarantine ./prboom-plus ./run.sh *.dylib 2>/dev/null || true
+./run.sh -wad "/path/to/Doom2.wad"
+```
+
+`-wad` selects the IWAD (defaults to `Doom2.wad` next to the script); everything
+else is passed to the game (`-fullscreen`, `-warp 1 -skill 3`, `-file pwad.wad`).
+Set `DOOMRT_AUDIO_DEVICE` to force an output device and `DOOMRT_NOSOUND=1` to
+start without sound.
+
 ## How it works
 
 There is no shipped Vulkan ray-tracing support on macOS. The stack is:
